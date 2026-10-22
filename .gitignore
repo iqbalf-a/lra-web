@@ -7,3 +7,5 @@ loadrunner-summary.json
 
 # Hermes/Claude local session state
 .hermes/
+.claude/
+.kilo/
