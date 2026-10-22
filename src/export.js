@@ -190,7 +190,7 @@ function exportFileName() {
   const folder = String(result?.resultDir ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   const runNumber = folder.match(/(\d+)$/)?.[1] ?? folder;
   const scenarioName = result?.scenario?.sessionName ?? "";
-  const base = [runNumber, scenarioName].filter(Boolean).join("_") || "loadrunner-errors";
+  const base = [runNumber, scenarioName].filter(Boolean).join("_") || "lra-web-errors";
   return `${base}.xlsx`.replace(/[\\/:*?"<>|]+/g, "_");
 }
 

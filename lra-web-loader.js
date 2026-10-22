@@ -27,7 +27,7 @@ function parseArgs(argv) {
   }
 
   if (!args.resultDir) {
-    throw new Error("Usage: node loadrunner-raw-loader.js <LoadRunner result dir> [--summary|--json] [--out file.json]");
+    throw new Error("Usage: node lra-web-loader.js <LoadRunner result dir> [--summary|--json] [--out file.json]");
   }
 
   return args;

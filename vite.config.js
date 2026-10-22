@@ -1,76 +1,14 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
-import { readFile } from "node:fs/promises";
-import { createConsoleSummary } from "./loadrunner-raw-loader.js";
-import { openLoadRunnerCache, queryDashboard, queryTransactions, queryTpsSummary, queryResponseTimeSeries, queryTpsSeries, queryTpsDetailSummary, queryTpsDetailSeries, queryTpsOverall } from "./loadrunner-duckdb-cache.js";
-import { queryErrors } from "./loadrunner-errors.js";
 import { startProgress, readProgress } from "./progress.js";
+import { loadSessionMetadata, requireSession, parseExtraNames, normalizeNameFilter, parseNameFilter, sendJson } from "./server-api.js";
 
-// Session adalah 24 hex digit pertama dari sha256 path result (lihat cacheKey di
-// loadrunner-duckdb-cache.js), jadi nilainya sudah dibatasi bentuknya. Polanya diperiksa di sini
-// karena session datang dari query string dan langsung dipakai sebagai nama berkas: tanpa guard,
-// `session=../../../../etc/foo` akan membaca berkas di luar folder cache.
-const SESSION_KEY = /^[0-9a-f]{24}$/;
-
-async function loadSessionMetadata(session) {
-  if (!SESSION_KEY.test(session ?? "")) throw new Error("Parameter session tidak valid.");
-  return JSON.parse(await readFile(new URL(`./.loadrunner-cache/${session}.json`, import.meta.url), "utf8"));
-}
-
-// Session wajib ada untuk semua endpoint dashboard/tabel, jadi pesan errornya dibedakan dari
-// session yang salah bentuk.
-async function requireSession(url) {
-  const session = url.searchParams.get("session");
-  if (!session) throw new Error("Parameter session wajib diisi.");
-  return loadSessionMetadata(session);
-}
-
-function parseExtraNames(url) {
-  const raw = url.searchParams.get("extraNames");
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((name) => typeof name === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-// Filter Include/Exclude panel TPS/RPS: pola dipisah koma. null kalau kedua parameter tidak dikirim,
-// supaya pemanggil lain tetap memakai filter prefix bawaan.
-// Normalize filter: accept {include: "str", exclude: "str"} or {include: [...], exclude: [...]}
-function normalizeNameFilter(filter) {
-  if (!filter) return null;
-  const toArray = (val) => {
-    if (!val) return [];
-    if (Array.isArray(val)) return val.filter((v) => typeof v === "string");
-    return String(val).split(",").map((v) => v.trim()).filter(Boolean);
-  };
-  return { include: toArray(filter.include), exclude: toArray(filter.exclude) };
-}
-
-function parseNameFilter(url) {
-  if (url.searchParams.has("names")) {
-    try {
-      const names = JSON.parse(url.searchParams.get("names"));
-      if (Array.isArray(names)) return { include: [], exclude: [], names: names.filter((name) => typeof name === "string") };
-    } catch {
-      // Parameter rusak: lanjut ke filter include/exclude di bawah.
-    }
-  }
-  if (!url.searchParams.has("include") && !url.searchParams.has("exclude")) return null;
-  const list = (name) => (url.searchParams.get(name) ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-  return { include: list("include"), exclude: list("exclude") };
-}
-
-function sendJson(res, status, body) {
-  const payload = JSON.stringify(body);
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Content-Length", Buffer.byteLength(payload));
-  res.setHeader("Cache-Control", "no-store");
-  res.end(payload);
-}
+// @duckdb/node-api adalah native addon — esbuild crash kalau di-import secara statis saat
+// memuat vite.config.js. Modul ini di-import secara lazy pada request pertama ke dev server,
+// sehingga `npm run build` (yang tidak memakai configureServer) bisa jalan tanpa masalah.
+let lraCache, lraErrors;
+async function getCache() { return lraCache ??= await import("./lra-web-cache.js"); }
+async function getErrors() { return lraErrors ??= await import("./lra-web-errors.js"); }
 
 export default defineConfig({
   plugins: [
@@ -91,7 +29,7 @@ export default defineConfig({
               sendJson(res, 400, { error: "Parameter path wajib diisi." });
               return;
             }
-
+            const { openLoadRunnerCache } = await getCache();
             const cached = await openLoadRunnerCache(resultPath, { progress });
             progress.done();
             sendJson(res, 200, {
@@ -108,6 +46,7 @@ export default defineConfig({
         server.middlewares.use("/api/dashboard", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryDashboard } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryDashboard(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeriesPerGraph: Number(url.searchParams.get("maxSeries")) || undefined,
@@ -120,6 +59,7 @@ export default defineConfig({
         });
         server.middlewares.use("/api/transactions", async (req, res) => {
           try {
+            const { queryTransactions } = await getCache();
             // Support both GET (query params) and POST (JSON body)
             let session, start, end, limit, offset, namePrefix, nameFilter, order;
             let cached;
@@ -156,6 +96,7 @@ export default defineConfig({
         server.middlewares.use("/api/tps-summary", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryTpsSummary } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryTpsSummary(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), Number(url.searchParams.get("limit")), Number(url.searchParams.get("offset")), url.searchParams.get("namePrefix") || "", parseNameFilter(url)));
           } catch (error) {
@@ -165,6 +106,7 @@ export default defineConfig({
         server.middlewares.use("/api/tps-detail-summary", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryTpsDetailSummary } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryTpsDetailSummary(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), url.searchParams.get("namePrefix") || "BP", parseNameFilter(url)));
           } catch (error) {
@@ -174,6 +116,7 @@ export default defineConfig({
         server.middlewares.use("/api/tps-detail-series", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryTpsDetailSeries } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryTpsDetailSeries(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeries: Number(url.searchParams.get("maxSeries")) || undefined,
@@ -188,6 +131,7 @@ export default defineConfig({
         server.middlewares.use("/api/tps-overall", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryTpsOverall } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryTpsOverall(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), url.searchParams.get("namePrefix") || "BP", parseNameFilter(url)));
           } catch (error) {
@@ -197,6 +141,7 @@ export default defineConfig({
         server.middlewares.use("/api/response-time-series", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryResponseTimeSeries } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryResponseTimeSeries(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeries: Number(url.searchParams.get("maxSeries")) || undefined,
@@ -212,6 +157,7 @@ export default defineConfig({
           const url = new URL(req.url ?? "", "http://127.0.0.1");
           const progress = startProgress(url.searchParams.get("progress") ?? "");
           try {
+            const { queryErrors } = await getErrors();
             // Session opsional di endpoint ini: panel Errors bisa jalan hanya dari path SqliteDb.db.
             const session = url.searchParams.get("session");
             const cached = session ? await loadSessionMetadata(session) : null;
@@ -240,6 +186,7 @@ export default defineConfig({
         server.middlewares.use("/api/tps-series", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const { queryTpsSeries } = await getCache();
             const cached = await requireSession(url);
             sendJson(res, 200, await queryTpsSeries(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeries: Number(url.searchParams.get("maxSeries")) || undefined,

@@ -7,9 +7,9 @@ Parser dan dashboard untuk membaca raw result LoadRunner / OpenText Performance 
 Dibuat karena LoadRunner Analysis (LRA) lambat dan sering crash saat membuka raw result besar,
 sehingga analisis hasil test tertahan dan menghambat jalannya project di tim testing.
 
-Ini branch **`lokal`**: dashboard hanya berjalan di mesin sendiri lewat `npm run dev`, dengan raw
-result dibaca dari folder di komputer yang sama. Versi terbaru dan terlengkap (upload ZIP dan mode
-server untuk dipakai banyak orang) ada di branch `main` dan dipelihara penulis.
+Ini branch **`local`**: dashboard hanya berjalan di mesin sendiri, dengan raw result dibaca dari
+folder di komputer yang sama. Versi terbaru dan terlengkap (upload ZIP dan mode server untuk dipakai
+banyak orang) ada di branch `main` dan dipelihara penulis.
 
 ## Requirement
 
@@ -17,9 +17,19 @@ server untuk dipakai banyak orang) ada di branch `main` dan dipelihara penulis.
 
 ## Cara menjalankan dashboard
 
+**Mode dev** (dengan Vite hot-reload, untuk development):
+
 ```powershell
 npm install
 npm run dev
+```
+
+**Mode standalone** (tanpa Vite, cukup Node.js — alternatif dari paket `.exe`):
+
+```powershell
+npm install
+npm run build
+node server.js
 ```
 
 Dashboard tersedia di `http://127.0.0.1:8787`. Isi path raw result, contoh:
@@ -78,19 +88,19 @@ Tekan Enter atau klik **Apply** untuk menerapkan filter. Filter berlaku serentak
 ## CLI — ringkasan transaksi
 
 ```powershell
-node .\loadrunner-raw-loader.js "D:\transfer-kantor\RawResults_12" --summary
+node .\lra-web-loader.js "D:\transfer-kantor\RawResults_12" --summary
 ```
 
 Export ke file:
 
 ```powershell
-node .\loadrunner-raw-loader.js "D:\transfer-kantor\RawResults_12" --summary --out .\summary.json
+node .\lra-web-loader.js "D:\transfer-kantor\RawResults_12" --summary --out .\summary.json
 ```
 
 Export data lengkap termasuk rows time-series:
 
 ```powershell
-node .\loadrunner-raw-loader.js "D:\transfer-kantor\RawResults_12" --json --out .\full.json
+node .\lra-web-loader.js "D:\transfer-kantor\RawResults_12" --json --out .\full.json
 ```
 
 ## File yang dibaca
@@ -109,9 +119,11 @@ node .\loadrunner-raw-loader.js "D:\transfer-kantor\RawResults_12" --json --out 
 
 ```powershell
 npm run build
+node server.js
 ```
 
-Output di folder `dist/`. Sajikan dengan `vite preview` atau server statis lain.
+Output build ada di folder `dist/`. `node server.js` menyajikan `dist/` sekaligus menangani semua
+API endpoint — tidak perlu Vite atau dependency tambahan, cukup Node.js 18+.
 
 ## Penggunaan memori
 

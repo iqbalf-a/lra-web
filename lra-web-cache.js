@@ -6,7 +6,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { createReadStream } from "node:fs";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { loadLoadRunnerResult } from "./loadrunner-raw-loader.js";
+import { loadLoadRunnerResult } from "./lra-web-loader.js";
 import { resolveGroupName } from "./group-utils.js";
 
 const CACHE_DIR = path.resolve(".loadrunner-cache");

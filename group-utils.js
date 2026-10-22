@@ -1,5 +1,5 @@
 // Resolusi nama transaksi -> BP group, dipakai baik di browser (src/state.js, lewat state.data)
-// maupun di server (loadrunner-duckdb-cache.js, lewat session.result) - makanya fungsi di sini
+// maupun di server (lra-web-cache.js, lewat session.result) - makanya fungsi di sini
 // murni (scriptGroups jadi parameter), tidak menyentuh state global manapun.
 export function scriptPrefix(name) {
   const segments = String(name ?? "").split("_");

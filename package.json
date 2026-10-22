@@ -5,7 +5,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server.js",
-    "summary": "node ./loadrunner-raw-loader.js"
+    "summary": "node ./lra-web-loader.js"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",

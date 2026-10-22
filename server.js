@@ -1,17 +1,16 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openLoadRunnerCache, queryDashboard, queryTransactions, queryTpsSummary, queryResponseTimeSeries, queryTpsSeries, queryTpsDetailSummary, queryTpsDetailSeries, queryTpsOverall } from "./loadrunner-duckdb-cache.js";
-import { queryErrors } from "./loadrunner-errors.js";
+import { openLoadRunnerCache, queryDashboard, queryTransactions, queryTpsSummary, queryResponseTimeSeries, queryTpsSeries, queryTpsDetailSummary, queryTpsDetailSeries, queryTpsOverall } from "./lra-web-cache.js";
+import { queryErrors } from "./lra-web-errors.js";
 import { startProgress, readProgress } from "./progress.js";
+import { loadSessionMetadata, requireSession, parseExtraNames, normalizeNameFilter, parseNameFilter, sendJson } from "./server-api.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const DIST = join(__dirname, "dist");
 const PORT = 8787;
-
-const SESSION_KEY = /^[0-9a-f]{24}$/;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -27,63 +26,10 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
-async function loadSessionMetadata(session) {
-  if (!SESSION_KEY.test(session ?? "")) throw new Error("Parameter session tidak valid.");
-  return JSON.parse(await readFile(new URL(`./.loadrunner-cache/${session}.json`, import.meta.url), "utf8"));
-}
-
-async function requireSession(url) {
-  const session = url.searchParams.get("session");
-  if (!session) throw new Error("Parameter session wajib diisi.");
-  return loadSessionMetadata(session);
-}
-
-function parseExtraNames(url) {
-  const raw = url.searchParams.get("extraNames");
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((name) => typeof name === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function normalizeNameFilter(filter) {
-  if (!filter) return null;
-  const toArray = (val) => {
-    if (!val) return [];
-    if (Array.isArray(val)) return val.filter((v) => typeof v === "string");
-    return String(val).split(",").map((v) => v.trim()).filter(Boolean);
-  };
-  return { include: toArray(filter.include), exclude: toArray(filter.exclude) };
-}
-
-function parseNameFilter(url) {
-  if (url.searchParams.has("names")) {
-    try {
-      const names = JSON.parse(url.searchParams.get("names"));
-      if (Array.isArray(names)) return { include: [], exclude: [], names: names.filter((name) => typeof name === "string") };
-    } catch {
-      // Parameter rusak: lanjut ke filter include/exclude.
-    }
-  }
-  if (!url.searchParams.has("include") && !url.searchParams.has("exclude")) return null;
-  const list = (name) => (url.searchParams.get(name) ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-  return { include: list("include"), exclude: list("exclude") };
-}
-
-function sendJson(res, status, body) {
-  const payload = JSON.stringify(body);
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Content-Length", Buffer.byteLength(payload));
-  res.setHeader("Cache-Control", "no-store");
-  res.end(payload);
-}
-
 async function serveStatic(res, urlPath) {
-  let filePath = join(DIST, urlPath === "/" ? "index.html" : urlPath);
+  const safePath = urlPath === "/" ? "index.html" : urlPath;
+  let filePath = resolve(join(DIST, safePath));
+  if (!filePath.startsWith(DIST + sep)) filePath = join(DIST, "index.html");
   if (!existsSync(filePath)) filePath = join(DIST, "index.html");
   try {
     const data = await readFile(filePath);
