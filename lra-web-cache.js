@@ -28,8 +28,9 @@ const SITESCOPE_METRIC_PATTERN = /\/CPU\/utilization$|\/(UNIXRES|WINRES)\/Memory
 // ulang otomatis; fingerprint file source saja tidak tahu logic ingest berubah.
 const INGEST_VERSION = 3;
 
-function cacheKey(resultDir) {
-  return createHash("sha256").update(path.resolve(resultDir)).digest("hex").slice(0, 24);
+// Profile ikut di hash: result yang sama dibuka dua profile menghasilkan dua cache terpisah.
+function cacheKey(resultDir, profile) {
+  return createHash("sha256").update(`${profile}\0${path.resolve(resultDir)}`).digest("hex").slice(0, 24);
 }
 
 function dashboardGraph(graph) {
@@ -167,7 +168,8 @@ function publicResult(result) {
 export async function openLoadRunnerCache(resultDir, options = {}) {
   const progress = options.progress ?? { phase() {}, set() {} };
   const resolvedResultDir = path.resolve(resultDir);
-  const key = cacheKey(resolvedResultDir);
+  const profile = options.profile ?? "";
+  const key = cacheKey(resolvedResultDir, profile);
   const databasePath = path.join(CACHE_DIR, `${key}.duckdb`);
   const metadataPath = path.join(CACHE_DIR, `${key}.json`);
   progress.phase("Memeriksa cache...", 0, 3);
@@ -210,7 +212,7 @@ export async function openLoadRunnerCache(resultDir, options = {}) {
     progress.phase("Membuat index...", 92, 98);
     await connection.run("CREATE INDEX rows_lookup ON rows(graph_type, measurement_id, elapsed_seconds)");
     progress.phase("Menyimpan metadata cache...", 98, 100);
-    const metadata = { key, fingerprint: currentFingerprint, result, rowCount };
+    const metadata = { key, profile, fingerprint: currentFingerprint, result, rowCount };
     await writeFile(metadataPath, JSON.stringify(metadata), "utf8");
     return metadata;
   } finally {

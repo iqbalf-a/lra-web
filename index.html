@@ -39,6 +39,10 @@
         <li><a href="#/errors" data-page="errors" class="block px-5 py-1.75 border-l-2 border-transparent text-[12.5px] font-medium text-(--chart-text) hover:text-(--text)">Errors</a></li>
       </ul>
       <div class="px-5 py-4.5 border-t border-(--line)">
+        <div id="profileBar" hidden class="flex items-center justify-between gap-2 mb-2.5 text-[11px] text-(--chart-text)" style="font-family: var(--font-mono);">
+          <span id="profileName" class="truncate text-(--text)"></span>
+          <button id="switchProfileBtn" type="button" class="cursor-pointer hover:text-(--text)">Ganti</button>
+        </div>
         <button
           id="themeToggle"
           type="button"

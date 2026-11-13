@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { startProgress, readProgress } from "./progress.js";
+import { handleSessionApi } from "./server-session.js";
 import { loadSessionMetadata, requireSession, parseExtraNames, normalizeNameFilter, parseNameFilter, sendJson } from "./server-api.js";
 
 // @duckdb/node-api adalah native addon — esbuild crash kalau di-import secara statis saat
@@ -16,6 +17,13 @@ export default defineConfig({
     {
       name: "loadrunner-api",
       configureServer(server) {
+        server.middlewares.use("/api", async (req, res, next) => {
+          try {
+            if (!(await handleSessionApi(req, res, new URL(req.originalUrl ?? "", "http://127.0.0.1")))) next();
+          } catch (error) {
+            sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+          }
+        });
         server.middlewares.use("/api/progress", (req, res) => {
           const url = new URL(req.url ?? "", "http://127.0.0.1");
           sendJson(res, 200, readProgress(url.searchParams.get("token") ?? ""));
@@ -30,7 +38,7 @@ export default defineConfig({
               return;
             }
             const { openLoadRunnerCache } = await getCache();
-            const cached = await openLoadRunnerCache(resultPath, { progress });
+            const cached = await openLoadRunnerCache(resultPath, { progress, profile: req.profile });
             progress.done();
             sendJson(res, 200, {
               session: cached.key,
@@ -47,7 +55,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryDashboard } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryDashboard(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeriesPerGraph: Number(url.searchParams.get("maxSeries")) || undefined,
               focusGraphType: url.searchParams.get("focusGraphType") || undefined,
@@ -76,10 +84,10 @@ export default defineConfig({
               nameFilter = normalizeNameFilter(parsed.nameFilter);
               order = parsed.order;
               if (!session) throw new Error("Parameter session wajib diisi.");
-              cached = await loadSessionMetadata(session);
+              cached = await loadSessionMetadata(session, req.profile);
             } else {
               const url = new URL(req.url ?? "", "http://127.0.0.1");
-              cached = await requireSession(url);
+              cached = await requireSession(url, req.profile);
               start = url.searchParams.get("start");
               end = url.searchParams.get("end");
               limit = url.searchParams.get("limit");
@@ -97,7 +105,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryTpsSummary } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryTpsSummary(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), Number(url.searchParams.get("limit")), Number(url.searchParams.get("offset")), url.searchParams.get("namePrefix") || "", parseNameFilter(url)));
           } catch (error) {
             sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -107,7 +115,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryTpsDetailSummary } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryTpsDetailSummary(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), url.searchParams.get("namePrefix") || "BP", parseNameFilter(url)));
           } catch (error) {
             sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -117,7 +125,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryTpsDetailSeries } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryTpsDetailSeries(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeries: Number(url.searchParams.get("maxSeries")) || undefined,
               namePrefix: url.searchParams.get("namePrefix") || "BP",
@@ -132,7 +140,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryTpsOverall } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryTpsOverall(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), url.searchParams.get("namePrefix") || "BP", parseNameFilter(url)));
           } catch (error) {
             sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -142,7 +150,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryResponseTimeSeries } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryResponseTimeSeries(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeries: Number(url.searchParams.get("maxSeries")) || undefined,
               namePrefix: url.searchParams.get("namePrefix") || "",
@@ -160,7 +168,7 @@ export default defineConfig({
             const { queryErrors } = await getErrors();
             // Session opsional di endpoint ini: panel Errors bisa jalan hanya dari path SqliteDb.db.
             const session = url.searchParams.get("session");
-            const cached = session ? await loadSessionMetadata(session) : null;
+            const cached = session ? await loadSessionMetadata(session, req.profile) : null;
             const optionalNumber = (name) => {
               const raw = url.searchParams.get(name);
               return raw === null || raw === "" ? undefined : Number(raw);
@@ -187,7 +195,7 @@ export default defineConfig({
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
             const { queryTpsSeries } = await getCache();
-            const cached = await requireSession(url);
+            const cached = await requireSession(url, req.profile);
             sendJson(res, 200, await queryTpsSeries(cached, Number(url.searchParams.get("start")), Number(url.searchParams.get("end")), Number(url.searchParams.get("granularity")), {
               maxSeries: Number(url.searchParams.get("maxSeries")) || undefined,
               namePrefix: url.searchParams.get("namePrefix") || "",

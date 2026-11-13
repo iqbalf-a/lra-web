@@ -9,3 +9,4 @@ loadrunner-summary.json
 .hermes/
 .claude/
 .kilo/
+/profiles.json

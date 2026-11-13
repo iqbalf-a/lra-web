@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { openLoadRunnerCache, queryDashboard, queryTransactions, queryTpsSummary, queryResponseTimeSeries, queryTpsSeries, queryTpsDetailSummary, queryTpsDetailSeries, queryTpsOverall } from "./lra-web-cache.js";
 import { queryErrors } from "./lra-web-errors.js";
 import { startProgress, readProgress } from "./progress.js";
+import { handleSessionApi } from "./server-session.js";
 import { loadSessionMetadata, requireSession, parseExtraNames, normalizeNameFilter, parseNameFilter, sendJson } from "./server-api.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -47,6 +48,8 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
 
   try {
+    if (await handleSessionApi(req, res, url)) return;
+
     if (path === "/api/progress") {
       sendJson(res, 200, readProgress(url.searchParams.get("token") ?? ""));
 
@@ -55,7 +58,7 @@ const server = createServer(async (req, res) => {
       const resultPath = url.searchParams.get("path");
       if (!resultPath) { sendJson(res, 400, { error: "Parameter path wajib diisi." }); return; }
       try {
-        const cached = await openLoadRunnerCache(resultPath, { progress });
+        const cached = await openLoadRunnerCache(resultPath, { progress, profile: req.profile });
         progress.done();
         sendJson(res, 200, { session: cached.key, result: cached.result, cache: { rowCount: cached.rowCount } });
       } catch (error) {
@@ -65,7 +68,7 @@ const server = createServer(async (req, res) => {
       }
 
     } else if (path === "/api/dashboard") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryDashboard(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),
@@ -87,9 +90,9 @@ const server = createServer(async (req, res) => {
         limit = parsed.limit; offset = parsed.offset; namePrefix = parsed.namePrefix;
         nameFilter = normalizeNameFilter(parsed.nameFilter); order = parsed.order;
         if (!session) throw new Error("Parameter session wajib diisi.");
-        cached = await loadSessionMetadata(session);
+        cached = await loadSessionMetadata(session, req.profile);
       } else {
-        cached = await requireSession(url);
+        cached = await requireSession(url, req.profile);
         start = url.searchParams.get("start"); end = url.searchParams.get("end");
         limit = url.searchParams.get("limit"); offset = url.searchParams.get("offset");
         namePrefix = url.searchParams.get("namePrefix");
@@ -101,7 +104,7 @@ const server = createServer(async (req, res) => {
       ));
 
     } else if (path === "/api/tps-summary") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryTpsSummary(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),
@@ -113,7 +116,7 @@ const server = createServer(async (req, res) => {
       ));
 
     } else if (path === "/api/tps-detail-summary") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryTpsDetailSummary(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),
@@ -123,7 +126,7 @@ const server = createServer(async (req, res) => {
       ));
 
     } else if (path === "/api/tps-detail-series") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryTpsDetailSeries(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),
@@ -137,7 +140,7 @@ const server = createServer(async (req, res) => {
       ));
 
     } else if (path === "/api/tps-overall") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryTpsOverall(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),
@@ -147,7 +150,7 @@ const server = createServer(async (req, res) => {
       ));
 
     } else if (path === "/api/response-time-series") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryResponseTimeSeries(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),
@@ -164,7 +167,7 @@ const server = createServer(async (req, res) => {
       const progress = startProgress(url.searchParams.get("progress") ?? "");
       try {
         const session = url.searchParams.get("session");
-        const cached = session ? await loadSessionMetadata(session) : null;
+        const cached = session ? await loadSessionMetadata(session, req.profile) : null;
         const optionalNumber = (name) => {
           const raw = url.searchParams.get(name);
           return raw === null || raw === "" ? undefined : Number(raw);
@@ -188,7 +191,7 @@ const server = createServer(async (req, res) => {
       }
 
     } else if (path === "/api/tps-series") {
-      const cached = await requireSession(url);
+      const cached = await requireSession(url, req.profile);
       sendJson(res, 200, await queryTpsSeries(cached,
         Number(url.searchParams.get("start")),
         Number(url.searchParams.get("end")),

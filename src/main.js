@@ -1,3 +1,4 @@
+import { showProfilePicker, currentProfile, signOut } from "./profile.js";
 import { formatHms, parseHms, parsePositiveSeconds } from "./format.js";
 import {
   state,
@@ -733,3 +734,15 @@ applyTheme(localStorage.getItem("loadrunnerTheme") === "dark" ? "dark" : "light"
 els.resultPath.value = localStorage.getItem("loadrunnerLastPath") || "";
 syncToolbarHeight();
 new ResizeObserver(syncToolbarHeight).observe(document.getElementById("toolbar"));
+
+function setProfile(name) {
+  document.getElementById("profileName").textContent = name;
+  document.getElementById("profileBar").hidden = false;
+}
+
+document.getElementById("switchProfileBtn").addEventListener("click", async () => {
+  await signOut();
+  setProfile(await showProfilePicker());
+});
+
+(async () => setProfile((await currentProfile()) ?? await showProfilePicker()))();
