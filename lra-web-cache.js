@@ -169,16 +169,18 @@ export async function openLoadRunnerCache(resultDir, options = {}) {
   const progress = options.progress ?? { phase() {}, set() {} };
   const resolvedResultDir = path.resolve(resultDir);
   const profile = options.profile ?? "";
-  const key = cacheKey(resolvedResultDir, profile);
+  // Jalur upload ZIP memberi key/fingerprint dari isi ZIP (bukan path), supaya ZIP identik dari
+  // profile mana pun memakai satu cache yang sama.
+  const key = options.key ?? cacheKey(resolvedResultDir, profile);
   const databasePath = path.join(CACHE_DIR, `${key}.duckdb`);
   const metadataPath = path.join(CACHE_DIR, `${key}.json`);
   progress.phase("Memeriksa cache...", 0, 3);
-  const currentFingerprint = await fingerprint(resolvedResultDir);
+  const currentFingerprint = options.fingerprint ?? await fingerprint(resolvedResultDir);
   await mkdir(CACHE_DIR, { recursive: true });
 
   if (existsSync(databasePath) && existsSync(metadataPath)) {
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
-    if (metadata.fingerprint === currentFingerprint && metadata.result.resultDir === resolvedResultDir) return metadata;
+    if (metadata.fingerprint === currentFingerprint && metadata.result.resultDir === (options.label ?? resolvedResultDir)) return metadata;
   }
 
   // Reuse the established metadata parser, but avoid retaining every graph point in JS.
@@ -190,6 +192,8 @@ export async function openLoadRunnerCache(resultDir, options = {}) {
     onGraphProgress: (fraction) => progress.set(fraction),
   });
   const result = publicResult(parsed);
+  // Folder ekstrak upload bersifat sementara; yang ditampilkan ke user adalah nama ZIP-nya.
+  if (options.label) result.resultDir = options.label;
   const { instance, connection } = await openWritableDatabase(databasePath);
   try {
     await connection.run("DROP TABLE IF EXISTS rows");
@@ -212,7 +216,7 @@ export async function openLoadRunnerCache(resultDir, options = {}) {
     progress.phase("Membuat index...", 92, 98);
     await connection.run("CREATE INDEX rows_lookup ON rows(graph_type, measurement_id, elapsed_seconds)");
     progress.phase("Menyimpan metadata cache...", 98, 100);
-    const metadata = { key, profile, fingerprint: currentFingerprint, result, rowCount };
+    const metadata = { key, owners: [profile], label: options.label, fingerprint: currentFingerprint, result, rowCount };
     await writeFile(metadataPath, JSON.stringify(metadata), "utf8");
     return metadata;
   } finally {

@@ -7,6 +7,7 @@ import { openLoadRunnerCache, queryDashboard, queryTransactions, queryTpsSummary
 import { queryErrors } from "./lra-web-errors.js";
 import { startProgress, readProgress } from "./progress.js";
 import { handleSessionApi } from "./server-session.js";
+import { handleUpload } from "./server-upload.js";
 import { loadSessionMetadata, requireSession, parseExtraNames, normalizeNameFilter, parseNameFilter, sendJson } from "./server-api.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -52,6 +53,9 @@ const server = createServer(async (req, res) => {
 
     if (path === "/api/progress") {
       sendJson(res, 200, readProgress(url.searchParams.get("token") ?? ""));
+
+    } else if (path === "/api/upload") {
+      await handleUpload(req, res, url);
 
     } else if (path === "/api/load") {
       const progress = startProgress(url.searchParams.get("progress") ?? "");
@@ -212,6 +216,7 @@ const server = createServer(async (req, res) => {
   }
 });
 
+server.requestTimeout = 0;
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Server berjalan di http://127.0.0.1:${PORT}`);
 });

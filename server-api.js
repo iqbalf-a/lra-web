@@ -1,4 +1,5 @@
-import { readFile, readdir, rm, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 
 // Session adalah 24 hex digit pertama dari sha256 profile + path result (lihat cacheKey di
 // lra-web-cache.js), jadi nilainya sudah dibatasi bentuknya. Polanya diperiksa di sini
@@ -7,8 +8,10 @@ import { readFile, readdir, rm, stat } from "node:fs/promises";
 const SESSION_KEY = /^[0-9a-f]{24}$/;
 const CACHE_DIR = new URL("./.loadrunner-cache/", import.meta.url);
 
-// Cache hanya boleh dibaca profile pemiliknya; admin boleh membaca semua. Cache lama (tanpa
-// field profile) hanya bisa dibuka admin.
+// Cache hanya boleh dibaca pemiliknya; admin boleh membaca semua. Satu cache bisa dimiliki beberapa
+// profile (ZIP identik yang diupload orang berbeda). Metadata lama memakai field `profile` tunggal.
+const ownersOf = (metadata) => metadata.owners ?? (metadata.profile != null ? [metadata.profile] : []);
+
 export async function loadSessionMetadata(session, profile) {
   if (!SESSION_KEY.test(session ?? "")) throw new Error("Parameter session tidak valid.");
   let metadata;
@@ -18,7 +21,7 @@ export async function loadSessionMetadata(session, profile) {
     if (error.code === "ENOENT") throw new Error("Cache result sudah tidak ada (mungkin dihapus admin). Klik Load lagi.");
     throw error;
   }
-  if (profile !== "admin" && metadata.profile !== profile) throw new Error("Session ini milik profile lain.");
+  if (profile !== "admin" && !ownersOf(metadata).includes(profile)) throw new Error("Session ini milik profile lain.");
   return metadata;
 }
 
@@ -42,13 +45,40 @@ export async function listCaches() {
     const sizes = await Promise.all([`${key}.json`, `${key}.duckdb`, `${key}.duckdb.wal`].map(sizeOf));
     return {
       key,
-      profile: metadata.profile ?? null,
-      resultDir: metadata.result?.resultDir ?? "",
+      owners: ownersOf(metadata),
+      label: metadata.label ?? metadata.result?.resultDir ?? "",
       bytes: sizes.reduce((sum, size) => sum + size, 0),
       modified: info.mtimeMs,
     };
   }));
-  return caches.sort((a, b) => String(a.profile).localeCompare(String(b.profile)) || b.modified - a.modified);
+  return caches.sort((a, b) => b.modified - a.modified);
+}
+
+// Antrean agar dua upload ZIP identik yang selesai bersamaan tidak saling menimpa daftar owners.
+let ownerQueue = Promise.resolve();
+
+// Tambahkan profile ke pemilik cache yang sudah ada. Mengembalikan metadata, atau null kalau cache
+// (json + duckdb) belum ada sehingga pemanggil harus ingest.
+export function addOwner(key, profile) {
+  const task = ownerQueue.then(async () => {
+    if (!SESSION_KEY.test(key) || !existsSync(new URL(`${key}.duckdb`, CACHE_DIR))) return null;
+    const file = new URL(`${key}.json`, CACHE_DIR);
+    let metadata;
+    try {
+      metadata = JSON.parse(await readFile(file, "utf8"));
+    } catch {
+      return null;
+    }
+    const owners = ownersOf(metadata);
+    if (!owners.includes(profile)) {
+      metadata.owners = [...owners, profile];
+      delete metadata.profile;
+      await writeFile(file, JSON.stringify(metadata), "utf8");
+    }
+    return metadata;
+  });
+  ownerQueue = task.catch(() => {});
+  return task;
 }
 
 // .duckdb dihapus dulu: kalau file itu masih terkunci (Windows) error-nya naik dan metadata tetap

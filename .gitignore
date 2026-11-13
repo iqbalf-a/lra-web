@@ -4,6 +4,7 @@ dist/
 loadrunner-summary.json
 *.zip
 /.loadrunner-cache/
+/.loadrunner-uploads/
 
 # Hermes/Claude local session state
 .hermes/

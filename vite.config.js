@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { startProgress, readProgress } from "./progress.js";
 import { handleSessionApi } from "./server-session.js";
+import { handleUpload } from "./server-upload.js";
 import { loadSessionMetadata, requireSession, parseExtraNames, normalizeNameFilter, parseNameFilter, sendJson } from "./server-api.js";
 
 // @duckdb/node-api adalah native addon — esbuild crash kalau di-import secara statis saat
@@ -17,6 +18,7 @@ export default defineConfig({
     {
       name: "loadrunner-api",
       configureServer(server) {
+        if (server.httpServer) server.httpServer.requestTimeout = 0;
         server.middlewares.use("/api", async (req, res, next) => {
           try {
             if (!(await handleSessionApi(req, res, new URL(req.originalUrl ?? "", "http://127.0.0.1")))) next();
@@ -27,6 +29,9 @@ export default defineConfig({
         server.middlewares.use("/api/progress", (req, res) => {
           const url = new URL(req.url ?? "", "http://127.0.0.1");
           sendJson(res, 200, readProgress(url.searchParams.get("token") ?? ""));
+        });
+        server.middlewares.use("/api/upload", (req, res) => {
+          handleUpload(req, res, new URL(req.originalUrl ?? "", "http://127.0.0.1"));
         });
         server.middlewares.use("/api/load", async (req, res) => {
           const url = new URL(req.url ?? "", "http://127.0.0.1");
@@ -210,11 +215,11 @@ export default defineConfig({
     },
   ],
   server: {
-    host: "127.0.0.1",
+    host: "0.0.0.0",
     port: 8787,
     // Runtime cache, bukan source — watch file .wal yang dikunci DuckDB bikin crash EBUSY di Windows.
     watch: {
-      ignored: ["**/.loadrunner-cache/**"],
+      ignored: ["**/.loadrunner-cache/**", "**/.loadrunner-uploads/**"],
     },
   },
   build: {

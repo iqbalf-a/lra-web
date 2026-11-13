@@ -56,6 +56,8 @@ const els = {
   tpsGranularity: document.getElementById("tpsGranularity"),
   themeToggle: document.getElementById("themeToggle"),
   loadBtn: document.getElementById("loadBtn"),
+  uploadBtn: document.getElementById("uploadBtn"),
+  zipInput: document.getElementById("zipInput"),
   exportXlsxBtn: document.getElementById("exportXlsxBtn"),
   applyTpsGranularityBtn: document.getElementById("applyTpsGranularityBtn"),
   resetTpsGranularityBtn: document.getElementById("resetTpsGranularityBtn"),
@@ -516,13 +518,14 @@ async function resetGroupFilter() {
   await withRenderOverlay("Resetting group filter", renderActivePage);
 }
 
-async function loadResult() {
-  const resultPath = els.resultPath.value.trim();
-  if (!resultPath) {
+async function loadResult(file) {
+  const resultPath = file ? "" : els.resultPath.value.trim();
+  if (!file && !resultPath) {
     setStatus("Isi path hasil LoadRunner dulu, lalu klik Load Result.", true);
     return;
   }
   els.loadBtn.disabled = true;
+  els.uploadBtn.disabled = true;
   setStatus("");
 
   const startedAt = Date.now();
@@ -534,10 +537,13 @@ async function loadResult() {
   startLoadingOverlay("Load Result", progressToken, 0.9);
 
   try {
-    const response = await fetch(`/api/load?path=${encodeURIComponent(resultPath)}&progress=${encodeURIComponent(progressToken)}`);
+    const token = encodeURIComponent(progressToken);
+    const response = file
+      ? await fetch(`/api/upload?name=${encodeURIComponent(file.name)}&progress=${token}`, { method: "POST", body: file })
+      : await fetch(`/api/load?path=${encodeURIComponent(resultPath)}&progress=${token}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Load failed");
-    localStorage.setItem("loadrunnerLastPath", resultPath);
+    if (!file) localStorage.setItem("loadrunnerLastPath", resultPath);
     state.data = payload;
     const duration = payload.result.scenario.durationSeconds || 300;
     els.startTime.value = "00:00:00";
@@ -564,6 +570,7 @@ async function loadResult() {
     clearInterval(timerInterval);
     finishLoadingOverlay();
     els.loadBtn.disabled = false;
+    els.uploadBtn.disabled = false;
   }
 }
 
@@ -647,7 +654,21 @@ function syncToolbarHeight() {
 
 // ── Wiring shell ──────────────────────────────────────────────────────────────────────────────────
 
-els.loadBtn.addEventListener("click", loadResult);
+els.loadBtn.addEventListener("click", () => loadResult());
+els.uploadBtn.addEventListener("click", () => els.zipInput.click());
+els.zipInput.addEventListener("change", () => {
+  const [file] = els.zipInput.files;
+  els.zipInput.value = "";
+  if (file) loadResult(file);
+});
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer?.files?.[0];
+  if (!file || els.uploadBtn.disabled) return;
+  if (!/.zip$/i.test(file.name)) setStatus("Hanya file .zip yang bisa di-drop.", true);
+  else loadResult(file);
+});
 els.resultPath.addEventListener("keydown", (e) => { if (e.key === "Enter") loadResult(); });
 els.exportXlsxBtn.addEventListener("click", () => {
   if (!state.data) return;
@@ -738,6 +759,7 @@ new ResizeObserver(syncToolbarHeight).observe(document.getElementById("toolbar")
 function setProfile(name) {
   document.getElementById("profileName").textContent = name;
   document.getElementById("profileBar").hidden = false;
+  document.querySelectorAll("[data-admin-only]").forEach((el) => { el.hidden = name !== "admin"; });
 }
 
 document.getElementById("switchProfileBtn").addEventListener("click", async () => {

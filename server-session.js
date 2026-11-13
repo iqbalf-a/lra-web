@@ -108,5 +108,9 @@ export async function handleSessionApi(req, res, url) {
     sendJson(res, 401, { error: "Belum ada profile aktif. Pilih profile untuk melanjutkan." });
     return true;
   }
+  if (path === "/api/load" && profile !== "admin") {
+    sendJson(res, 403, { error: "Load dari path server hanya untuk admin. Upload ZIP result." });
+    return true;
+  }
   return false;
 }

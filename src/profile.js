@@ -51,8 +51,8 @@ async function render(admin, done) {
             <div class="space-y-1.5">${caches.map((c) => `
               <div class="flex items-center justify-between gap-3 ${CARD} px-3 py-1.5 cursor-default">
                 <div class="min-w-0 text-[11.5px]" ${MONO}>
-                  <div class="truncate" title="${esc(c.resultDir)}">${esc(c.resultDir) || c.key}</div>
-                  <div class="text-(--chart-text)">${esc(c.profile ?? "(cache lama)")} - ${formatSize(c.bytes)} - ${new Date(c.modified).toLocaleString("id-ID")}</div>
+                  <div class="truncate" title="${esc(c.label)}">${esc(c.label) || c.key}</div>
+                  <div class="text-(--chart-text)">${esc(c.owners.join(", ") || "(tanpa owner)")} - ${formatSize(c.bytes)} - ${new Date(c.modified).toLocaleString("id-ID")}</div>
                 </div>
                 <button data-del-cache="${c.key}" class="shrink-0 text-[11px] text-(--chart-text) hover:text-(--danger) cursor-pointer">Hapus</button>
               </div>`).join("") || `<p class="text-center text-[12px] text-(--chart-text)">Cache kosong.</p>`}</div>
@@ -90,9 +90,13 @@ async function render(admin, done) {
     for (const key of keys) await api(`/api/admin/caches/${key}`, { method: "DELETE" });
     await render(true, done);
   };
-  overlay.querySelectorAll("[data-del-cache]").forEach((btn) => btn.addEventListener("click", guard(() => deleteCaches([btn.dataset.delCache]))));
+  overlay.querySelectorAll("[data-del-cache]").forEach((btn) => btn.addEventListener("click", guard(async () => {
+    const cache = caches.find((c) => c.key === btn.dataset.delCache);
+    const owners = cache?.owners.join(", ") || "(tanpa owner)";
+    if (confirm(`Hapus cache "${cache?.label || btn.dataset.delCache}"? Ini juga menghapus untuk semua pemiliknya: ${owners}.`)) await deleteCaches([btn.dataset.delCache]);
+  })));
   on("[data-del-all]", "click", async () => {
-    if (confirm(`Hapus semua ${caches.length} cache (${formatSize(totalBytes)})? User harus Load ulang result-nya.`)) await deleteCaches(caches.map((c) => c.key));
+    if (confirm(`Hapus semua ${caches.length} cache (${formatSize(totalBytes)})? Semua user harus upload/Load ulang result-nya.`)) await deleteCaches(caches.map((c) => c.key));
   });
 
   const addProfile = async () => {
