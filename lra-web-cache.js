@@ -165,6 +165,17 @@ function publicResult(result) {
   };
 }
 
+// Author: Moh. Iqbal Firman Ardiansyah
+const KOPRA_KEYWORDS = /kopra|mcm|scm|mgt|ecohub|partnership|subsidi/i;
+
+const collectStrings = (value) => (typeof value === "string" ? [value]
+  : value && typeof value === "object" ? Object.values(value).flatMap(collectStrings) : []);
+
+// Semua teks result (nama skenario, script/BP, transaksi, monitor, path/label) dipindai.
+function assertKopra(result) {
+  if (!collectStrings(result).some((text) => KOPRA_KEYWORDS.test(text))) throw new Error("Tools ini hanya support untuk Kopra.");
+}
+
 export async function openLoadRunnerCache(resultDir, options = {}) {
   const progress = options.progress ?? { phase() {}, set() {} };
   const resolvedResultDir = path.resolve(resultDir);
@@ -180,7 +191,10 @@ export async function openLoadRunnerCache(resultDir, options = {}) {
 
   if (existsSync(databasePath) && existsSync(metadataPath)) {
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
-    if (metadata.fingerprint === currentFingerprint && metadata.result.resultDir === (options.label ?? resolvedResultDir)) return metadata;
+    if (metadata.fingerprint === currentFingerprint && metadata.result.resultDir === (options.label ?? resolvedResultDir)) {
+      assertKopra(metadata.result);
+      return metadata;
+    }
   }
 
   // Reuse the established metadata parser, but avoid retaining every graph point in JS.
@@ -194,6 +208,7 @@ export async function openLoadRunnerCache(resultDir, options = {}) {
   const result = publicResult(parsed);
   // Folder ekstrak upload bersifat sementara; yang ditampilkan ke user adalah nama ZIP-nya.
   if (options.label) result.resultDir = options.label;
+  assertKopra(result);
   const { instance, connection } = await openWritableDatabase(databasePath);
   try {
     await connection.run("DROP TABLE IF EXISTS rows");

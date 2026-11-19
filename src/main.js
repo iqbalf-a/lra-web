@@ -1,3 +1,4 @@
+// Author: Moh. Iqbal Firman Ardiansyah
 import { showProfilePicker, currentProfile, signOut } from "./profile.js";
 import { formatHms, parseHms, parsePositiveSeconds } from "./format.js";
 import {

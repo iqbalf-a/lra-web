@@ -1,4 +1,5 @@
 {
+  "author": "Moh. Iqbal Firman Ardiansyah",
   "type": "module",
   "scripts": {
     "dev": "vite",
